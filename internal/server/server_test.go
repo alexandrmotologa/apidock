@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/alexandrmotologa/apidock/internal/spec"
@@ -73,6 +74,23 @@ func TestServerEndpoints(t *testing.T) {
 	apiServer.handleStatic(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200 for static index, got %d", rec.Code)
+	}
+
+	// 5. POST /api/diff
+	diffBody := `{"newSpec":"openapi: 3.1.0\ninfo:\n  title: Petstore 2\n  version: 2.0.0\npaths: {}"}`
+	diffReq := httptest.NewRequest(http.MethodPost, "/api/diff", strings.NewReader(diffBody))
+	diffRec := httptest.NewRecorder()
+	apiServer.handleDiff(diffRec, diffReq)
+	if diffRec.Code != http.StatusOK {
+		t.Errorf("expected 200 for /api/diff, got %d (body: %s)", diffRec.Code, diffRec.Body.String())
+	}
+
+	// 6. GET /api/export?format=postman
+	exportReq := httptest.NewRequest(http.MethodGet, "/api/export?format=postman", nil)
+	exportRec := httptest.NewRecorder()
+	apiServer.handleExport(exportRec, exportReq)
+	if exportRec.Code != http.StatusOK {
+		t.Errorf("expected 200 for /api/export postman, got %d", exportRec.Code)
 	}
 }
 

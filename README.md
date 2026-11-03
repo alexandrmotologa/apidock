@@ -9,8 +9,12 @@ APIDock reads OpenAPI specifications (YAML or JSON) and serves an interactive we
 - **OpenAPI 3.0 and 3.1 Parser**: Full support for YAML and JSON specifications with recursive `$ref` pointer resolution across internal schemas and external files.
 - **Embedded Web Studio**: Three-column documentation interface with dark-mode styling, tag-based navigation, search filtering, schema hierarchy explorer, and Monaco Editor.
 - **Integrated HTTP Client**: Send live API requests directly from the browser with authentication headers, path parameters, query parameters, and raw JSON request bodies.
-- **CORS Bypass Proxy**: Built-in backend proxy endpoint (`POST /api/proxy`) to test third-party endpoints without browser cross-origin resource sharing restrictions.
+- **CORS Bypass Proxy & Streaming**: Built-in backend proxy endpoint (`POST /api/proxy`) to test third-party endpoints without browser cross-origin restrictions, with full streaming support for Server-Sent Events (SSE) and NDJSON.
 - **Deterministic Mock Server**: High-speed mock server on port 4010 that parses response schemas and generates realistic synthetic responses matching data formats, constraints, and explicit examples.
+- **Breaking Changes Diff Engine**: Compare two specification revisions in the terminal or web studio to detect removed endpoints, newly required parameters, altered schemas, or removed status codes before deployment.
+- **Multi-Format Exporters**: Export self-contained standalone HTML documents (`--single-file`), Postman Collections v2.1 (`--format postman`), or Bruno collection workspaces (`--format bruno`).
+- **cURL Command Import**: Parse raw cURL commands and populate the interactive playground parameters, headers, and request body automatically.
+- **Response Contract Validator**: Evaluate live API responses against declared OpenAPI schemas with percentage conformity scores and path diagnostics.
 - **Environment and Secret Vault**: Manage Local, Staging, and Production environments with client-side encryption using AES-GCM.
 - **Code Snippet Generator**: Automatic generation of copy-pasteable request snippets in cURL, TypeScript (Fetch and Axios), Python (Requests and HTTPX), and Go.
 - **Hot-Reload Watcher**: Automatically reloads the web UI when local OpenAPI specification files change on disk.
@@ -88,13 +92,26 @@ apidock mock ./openapi.yaml --port 4010
 Validate an OpenAPI specification file:
 
 ```bash
-apidock validate ./openapi.yaml
+apidock validate ./openapi.yaml --strict
 ```
 
-Export standalone static HTML documentation:
+Detect breaking changes between two specification versions:
 
 ```bash
-apidock export ./openapi.yaml --out ./dist
+apidock diff ./v1.yaml ./v2.yaml
+```
+
+Export standalone zero-dependency HTML documentation:
+
+```bash
+apidock export ./openapi.yaml --single-file --out ./docs.html
+```
+
+Export Postman collection or Bruno workspace:
+
+```bash
+apidock export ./openapi.yaml --format postman --out ./postman.json
+apidock export ./openapi.yaml --format bruno --out ./bruno
 ```
 
 ## CLI Reference
@@ -104,7 +121,8 @@ apidock export ./openapi.yaml --out ./dist
 | `serve <spec>` | `--port 8080`, `--mock-port 4010`, `--no-mock`, `--no-open`, `--watch` | Starts web documentation studio and mock server. |
 | `mock <spec>` | `--port 4010`, `--latency 0ms`, `--cors` | Runs standalone schema-driven mock server. |
 | `validate <spec>` | `--strict` | Verifies syntax, schema references, and structure. |
-| `export <spec>` | `--out ./dist`, `--single-file` | Exports self-contained static HTML documentation bundle. |
+| `diff <old> <new>` | `--json`, `--fail-on-breaking` | Compares two specifications and reports breaking changes. |
+| `export <spec>` | `--out <path>`, `--single-file`, `--format postman\|bruno\|static` | Exports static HTML, single-file bundle, Postman JSON, or Bruno workspace. |
 | `version` | none | Prints version, commit hash, and build date. |
 
 ## Mock Server Capabilities

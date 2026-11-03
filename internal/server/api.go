@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/alexandrmotologa/apidock/internal/codegen"
+	"github.com/alexandrmotologa/apidock/internal/diff"
+	"github.com/alexandrmotologa/apidock/internal/export"
 	"github.com/alexandrmotologa/apidock/internal/mock"
 	"github.com/alexandrmotologa/apidock/internal/proxy"
 	"github.com/alexandrmotologa/apidock/internal/spec"
@@ -76,6 +78,8 @@ func (s *APIServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/spec", s.handleGetSpec)
 	mux.HandleFunc("/api/raw", s.handleGetRaw)
 	mux.HandleFunc("/api/validate", s.handleValidate)
+	mux.HandleFunc("/api/diff", s.handleDiff)
+	mux.HandleFunc("/api/export", s.handleExport)
 	mux.HandleFunc("/api/proxy", s.handleProxy)
 	mux.HandleFunc("/api/history", s.handleHistory)
 	mux.HandleFunc("/api/codegen", s.handleCodegen)
@@ -197,6 +201,55 @@ func (s *APIServer) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Support live streaming if requested by client
+	if req.Stream || r.URL.Query().Get("stream") == "true" {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "Streaming unsupported by HTTP transport", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
+		flusher.Flush()
+
+		err := s.proxyClient.ExecuteStream(r.Context(), req, proxy.StreamCallback{
+			OnStart: func(statusCode int, statusText string, headers map[string]string) error {
+				meta := map[string]any{
+					"status":     statusCode,
+					"statusText": statusText,
+					"headers":    headers,
+				}
+				metaBytes, _ := json.Marshal(meta)
+				_, _ = fmt.Fprintf(w, "event: meta\ndata: %s\n\n", string(metaBytes))
+				flusher.Flush()
+				return nil
+			},
+			OnChunk: func(chunk []byte) error {
+				chunkMeta := map[string]any{
+					"chunk": string(chunk),
+				}
+				chunkBytes, _ := json.Marshal(chunkMeta)
+				_, _ = fmt.Fprintf(w, "event: chunk\ndata: %s\n\n", string(chunkBytes))
+				flusher.Flush()
+				return nil
+			},
+		})
+
+		if err != nil {
+			errMeta := map[string]string{"error": err.Error()}
+			b, _ := json.Marshal(errMeta)
+			_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(b))
+			flusher.Flush()
+		} else {
+			_, _ = fmt.Fprintf(w, "event: done\ndata: {}\n\n")
+			flusher.Flush()
+		}
+		return
+	}
+
 	resp, err := s.proxyClient.Execute(r.Context(), req)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -213,6 +266,100 @@ func (s *APIServer) handleProxy(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+type DiffRequest struct {
+	OldSpec string `json:"oldSpec,omitempty"`
+	NewSpec string `json:"newSpec"`
+}
+
+func (s *APIServer) handleDiff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req DiffRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if strings.TrimSpace(req.NewSpec) == "" {
+		http.Error(w, "newSpec is required", http.StatusBadRequest)
+		return
+	}
+
+	var oldSpec *spec.Spec
+	if strings.TrimSpace(req.OldSpec) != "" {
+		parsedOld, err := s.parseSpecInput(req.OldSpec)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to parse oldSpec: %v", err), http.StatusBadRequest)
+			return
+		}
+		oldSpec = parsedOld
+	} else {
+		s.mu.RLock()
+		oldSpec = s.spec
+		s.mu.RUnlock()
+	}
+
+	newSpec, err := s.parseSpecInput(req.NewSpec)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to parse newSpec: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	report := diff.Compare(oldSpec, newSpec)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(report)
+}
+
+func (s *APIServer) parseSpecInput(input string) (*spec.Spec, error) {
+	trimmed := strings.TrimSpace(input)
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") || strings.HasSuffix(trimmed, ".yaml") || strings.HasSuffix(trimmed, ".yml") || strings.HasSuffix(trimmed, ".json") {
+		if _, err := os.Stat(trimmed); err == nil || strings.HasPrefix(trimmed, "http") {
+			return s.parser.Parse(trimmed)
+		}
+	}
+	return s.parser.ParseBytes([]byte(input))
+}
+
+func (s *APIServer) handleExport(w http.ResponseWriter, r *http.Request) {
+	format := r.URL.Query().Get("format")
+	s.mu.RLock()
+	currentSpec := s.spec
+	s.mu.RUnlock()
+
+	switch strings.ToLower(format) {
+	case "postman":
+		data, err := export.ToPostmanJSON(currentSpec)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to export Postman collection: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"postman_collection.json\"")
+		_, _ = w.Write(data)
+
+	case "single-file", "html":
+		distFS, err := GetDistFS()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to access static assets: %v", err), http.StatusInternalServerError)
+			return
+		}
+		htmlData, err := export.BuildSingleFileHTML(currentSpec, distFS)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to build standalone HTML: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"apidock-docs.html\"")
+		_, _ = w.Write(htmlData)
+
+	default:
+		http.Error(w, "Invalid format. Supported: postman, single-file", http.StatusBadRequest)
+	}
 }
 
 func (s *APIServer) handleHistory(w http.ResponseWriter, r *http.Request) {

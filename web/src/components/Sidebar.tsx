@@ -10,6 +10,8 @@ import {
   FileCode2,
   ChevronDown,
   Layers,
+  GitCompare,
+  Download,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -20,6 +22,7 @@ interface SidebarProps {
   onOpenEnv: () => void
   onOpenHistory: () => void
   onOpenValidation: () => void
+  onOpenDiff?: () => void
   activeEnv: Environment
   mockPort?: number
 }
@@ -42,6 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenEnv,
   onOpenHistory,
   onOpenValidation,
+  onOpenDiff,
   activeEnv,
   mockPort = 4010,
 }) => {
@@ -146,7 +150,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="px-3 py-2 border-b border-zinc-800/50 flex items-center gap-1.5 text-[11px]">
         <button
           onClick={onOpenHistory}
-          className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1 bg-zinc-900/50 hover:bg-zinc-800/60 rounded text-zinc-400 hover:text-zinc-200 transition-colors border border-zinc-800/50"
+          className="flex-1 flex items-center justify-center gap-1 px-1.5 py-1 bg-zinc-900/50 hover:bg-zinc-800/60 rounded text-zinc-400 hover:text-zinc-200 transition-colors border border-zinc-800/50"
           title="Recent Request History"
         >
           <History className="w-3 h-3 text-zinc-500" />
@@ -155,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <button
           onClick={onOpenValidation}
-          className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1 bg-zinc-900/50 hover:bg-zinc-800/60 rounded text-zinc-400 hover:text-zinc-200 transition-colors border border-zinc-800/50"
+          className="flex-1 flex items-center justify-center gap-1 px-1.5 py-1 bg-zinc-900/50 hover:bg-zinc-800/60 rounded text-zinc-400 hover:text-zinc-200 transition-colors border border-zinc-800/50"
           title="OpenAPI Spec Diagnostics"
         >
           {hasDiagnostics ? (
@@ -163,8 +167,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ) : (
             <CheckCircle2 className="w-3 h-3 text-emerald-400" />
           )}
-          <span>Spec Check</span>
+          <span>Audit</span>
         </button>
+
+        {onOpenDiff && (
+          <button
+            onClick={onOpenDiff}
+            className="flex-1 flex items-center justify-center gap-1 px-1.5 py-1 bg-zinc-900/50 hover:bg-zinc-800/60 rounded text-zinc-400 hover:text-zinc-200 transition-colors border border-zinc-800/50"
+            title="Compare OpenAPI Spec Diff & Breaking Changes (Ctrl+D)"
+          >
+            <GitCompare className="w-3 h-3 text-indigo-400" />
+            <span>Diff</span>
+          </button>
+        )}
 
         <a
           href={`http://localhost:${mockPort}`}
@@ -249,20 +264,43 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Bottom Status Footer */}
-      <div className="p-3 border-t border-zinc-800/70 text-[11px] text-zinc-500 flex items-center justify-between">
+      <div className="p-3 border-t border-zinc-800/70 text-[11px] text-zinc-500 space-y-2">
         <div className="flex items-center gap-1.5">
-          <Server className="w-3.5 h-3.5 text-zinc-500" />
-          <span>{spec.endpoints.length} operations</span>
+          <a
+            href="/api/export?format=single-file"
+            download="apidock-docs.html"
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 rounded border border-zinc-800 text-[10px] font-medium transition-colors"
+            title="Download zero-dependency single HTML file"
+          >
+            <Download className="w-3 h-3 text-indigo-400" />
+            <span>Export HTML</span>
+          </a>
+          <a
+            href="/api/export?format=postman"
+            download="postman_collection.json"
+            className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 rounded border border-zinc-800 text-[10px] font-medium transition-colors"
+            title="Download Postman Collection v2.1"
+          >
+            <Download className="w-3 h-3 text-amber-400" />
+            <span>Postman</span>
+          </a>
         </div>
-        <a
-          href="/api/raw"
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-1 hover:text-zinc-300 transition-colors"
-        >
-          <FileCode2 className="w-3 h-3" />
-          <span>Raw Spec</span>
-        </a>
+
+        <div className="flex items-center justify-between text-[10px] pt-1 border-t border-zinc-800/40">
+          <div className="flex items-center gap-1.5">
+            <Server className="w-3 h-3 text-zinc-500" />
+            <span>{spec.endpoints.length} operations</span>
+          </div>
+          <a
+            href="/api/raw"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 hover:text-zinc-300 transition-colors"
+          >
+            <FileCode2 className="w-3 h-3" />
+            <span>Raw Spec</span>
+          </a>
+        </div>
       </div>
     </aside>
   )

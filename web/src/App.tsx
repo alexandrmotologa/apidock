@@ -8,6 +8,7 @@ import { SearchModal } from './components/SearchModal'
 import { EnvSwitcherModal } from './components/EnvSwitcherModal'
 import { HistoryModal } from './components/HistoryModal'
 import { ValidationModal } from './components/ValidationModal'
+import { DiffModal } from './components/DiffModal'
 import type { Endpoint } from './types/spec'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 
@@ -34,6 +35,7 @@ export function App() {
   const [isEnvOpen, setIsEnvOpen] = useState(false)
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isValidationOpen, setIsValidationOpen] = useState(false)
+  const [isDiffOpen, setIsDiffOpen] = useState(false)
 
   // Initialize selected endpoint and server when spec loads
   useEffect(() => {
@@ -64,6 +66,11 @@ export function App() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
         e.preventDefault()
         setIsHistoryOpen((prev) => !prev)
+      }
+      // Cmd/Ctrl + D => Spec Diff
+      if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+        e.preventDefault()
+        setIsDiffOpen((prev) => !prev)
       }
     }
 
@@ -112,6 +119,7 @@ export function App() {
         onOpenEnv={() => setIsEnvOpen(true)}
         onOpenHistory={() => setIsHistoryOpen(true)}
         onOpenValidation={() => setIsValidationOpen(true)}
+        onOpenDiff={() => setIsDiffOpen(true)}
         activeEnv={activeEnv}
       />
 
@@ -163,6 +171,11 @@ export function App() {
       <ValidationModal
         isOpen={isValidationOpen}
         onClose={() => setIsValidationOpen(false)}
+      />
+
+      <DiffModal
+        isOpen={isDiffOpen}
+        onClose={() => setIsDiffOpen(false)}
       />
     </div>
   )

@@ -7,6 +7,20 @@ export function useSpec() {
   const [error, setError] = useState<string | null>(null)
 
   const fetchSpec = useCallback(async () => {
+    // Check if running in standalone single-file mode with embedded spec
+    const embeddedEl = document.getElementById('apidock-spec')
+    if (embeddedEl && embeddedEl.textContent) {
+      try {
+        const embeddedData: Spec = JSON.parse(embeddedEl.textContent)
+        setSpec(embeddedData)
+        setError(null)
+        setLoading(false)
+        return
+      } catch (err) {
+        console.warn('[APIDock] Failed to parse embedded spec payload', err)
+      }
+    }
+
     try {
       setLoading(true)
       const resp = await fetch('/api/spec')
@@ -25,6 +39,11 @@ export function useSpec() {
 
   useEffect(() => {
     fetchSpec()
+
+    // Skip SSE if running in standalone embedded mode without server
+    if (document.getElementById('apidock-spec')) {
+      return
+    }
 
     // Setup Server-Sent Events (SSE) for hot-reload on disk change
     const events = new EventSource('/api/events')

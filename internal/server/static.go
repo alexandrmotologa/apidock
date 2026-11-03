@@ -11,6 +11,11 @@ import (
 //go:embed dist/*
 var staticFS embed.FS
 
+// GetDistFS returns an fs.FS rooted at the embedded dist directory.
+func GetDistFS() (fs.FS, error) {
+	return fs.Sub(staticFS, "dist")
+}
+
 func (s *APIServer) handleStatic(w http.ResponseWriter, r *http.Request) {
 	distFS, err := fs.Sub(staticFS, "dist")
 	if err != nil {

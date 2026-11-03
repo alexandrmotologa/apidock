@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alexandrmotologa/apidock/internal/diff"
+	"github.com/alexandrmotologa/apidock/internal/export"
 	"github.com/alexandrmotologa/apidock/internal/mock"
 	"github.com/alexandrmotologa/apidock/internal/server"
 	"github.com/alexandrmotologa/apidock/internal/spec"
@@ -44,6 +46,8 @@ func main() {
 		cmdMock(args)
 	case "validate":
 		cmdValidate(args)
+	case "diff":
+		cmdDiff(args)
 	case "export":
 		cmdExport(args)
 	case "version", "-v", "--version":
@@ -69,11 +73,12 @@ Usage:
   apidock <command> [arguments]
 
 Commands:
-  serve <spec>     Serve interactive documentation web studio & mock server
-  mock <spec>      Start standalone schema-driven mock server
-  validate <spec>  Verify OpenAPI specification syntax and reference integrity
-  export <spec>    Export standalone static documentation files for web hosting
-  version          Display version and build information
+  serve <spec>          Serve interactive documentation web studio & mock server
+  mock <spec>           Start standalone schema-driven mock server
+  validate <spec>       Verify OpenAPI specification syntax and reference integrity
+  diff <old> <new>      Detect breaking changes between two OpenAPI specifications
+  export <spec>         Export static HTML, Postman collection, or Bruno workspace
+  version               Display version and build information
 
 Flags for 'serve':
   --port int          Port for web studio documentation (default: 8080)
@@ -91,15 +96,23 @@ Flags for 'mock':
 Flags for 'validate':
   --strict            Treat warnings as errors
 
+Flags for 'diff':
+  --json              Output raw JSON report instead of formatted terminal summary
+  --fail-on-breaking  Return exit code 1 if breaking changes exist (default: true)
+
 Flags for 'export':
-  --out string        Output directory for exported assets (default: ./dist)
+  --format string     Export format: static, single-file, postman, bruno (default: static)
+  --single-file       Shorthand for single-file zero-dependency HTML bundle
+  --out string        Output directory or file path
 
 Examples:
   apidock serve ./openapi.yaml
-  apidock serve https://api.example.com/openapi.json --port 3000 --mock-port 4010
   apidock mock ./openapi.yaml --port 4010 --latency 150ms
   apidock validate ./openapi.yaml --strict
-  apidock export ./openapi.yaml --out ./public-docs`)
+  apidock diff ./v1.yaml ./v2.yaml
+  apidock export ./openapi.yaml --single-file --out ./docs.html
+  apidock export ./openapi.yaml --format postman --out ./postman.json
+  apidock export ./openapi.yaml --format bruno --out ./bruno`)
 }
 
 func separateArgs(args []string) ([]string, []string) {
@@ -113,7 +126,7 @@ func separateArgs(args []string) ([]string, []string) {
 			// Check if flag takes a separate value
 			if !strings.Contains(arg, "=") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 				// Peek if it's a known boolean flag
-				if arg == "--no-mock" || arg == "--no-open" || arg == "--strict" {
+				if arg == "--no-mock" || arg == "--no-open" || arg == "--strict" || arg == "--single-file" || arg == "--json" || arg == "--fail-on-breaking" {
 					continue
 				}
 				flagArgs = append(flagArgs, args[i+1])
@@ -321,15 +334,96 @@ func cmdValidate(args []string) {
 	fmt.Printf("\nSpecification passed with %d warning(s).\n", len(diagnostics))
 }
 
+func cmdDiff(args []string) {
+	fs := flag.NewFlagSet("diff", flag.ExitOnError)
+	outputJSON := fs.Bool("json", false, "Output raw JSON report")
+	failOnBreaking := fs.Bool("fail-on-breaking", true, "Exit with error code 1 if breaking changes exist")
+
+	flagArgs, posArgs := separateArgs(args)
+	_ = fs.Parse(flagArgs)
+
+	if len(posArgs) < 2 {
+		fmt.Fprintln(os.Stderr, "Error: two specifications are required for comparison.\nExample: apidock diff ./old_spec.yaml ./new_spec.yaml")
+		os.Exit(1)
+	}
+
+	oldTarget := posArgs[0]
+	newTarget := posArgs[1]
+
+	parser := spec.NewParser()
+	oldSpec, err := parser.Parse(oldTarget)
+	if err != nil {
+		log.Fatalf("Fatal: failed to parse base specification (%s): %v\n", oldTarget, err)
+	}
+
+	newSpec, err := parser.Parse(newTarget)
+	if err != nil {
+		log.Fatalf("Fatal: failed to parse target specification (%s): %v\n", newTarget, err)
+	}
+
+	report := diff.Compare(oldSpec, newSpec)
+
+	if *outputJSON {
+		b, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Println(string(b))
+		if report.BreakingCount > 0 && *failOnBreaking {
+			os.Exit(1)
+		}
+		return
+	}
+
+	fmt.Printf("\nAPIDock Diff Engine - OpenAPI Breaking Changes Report\n")
+	fmt.Printf("Comparing: %s (v%s) -> %s (v%s)\n\n", report.OldTitle, report.OldVersion, report.NewTitle, report.NewVersion)
+
+	if len(report.Changes) == 0 {
+		fmt.Println("✅ No differences found. Both specifications are functionally identical.")
+		return
+	}
+
+	if report.BreakingCount > 0 {
+		fmt.Printf("🚨 Breaking Changes (%d):\n", report.BreakingCount)
+		for _, c := range report.Changes {
+			if c.Type == diff.ChangeBreaking {
+				fmt.Printf("  ❌ [%-10s] %-30s %s\n", c.Category, c.Path, c.Message)
+			}
+		}
+		fmt.Println()
+	}
+
+	if report.NonBreakingCount > 0 {
+		fmt.Printf("✨ Non-Breaking Changes (%d):\n", report.NonBreakingCount)
+		for _, c := range report.Changes {
+			if c.Type == diff.ChangeNonBreaking {
+				fmt.Printf("  ✨ [%-10s] %-30s %s\n", c.Category, c.Path, c.Message)
+			}
+		}
+		fmt.Println()
+	}
+
+	for _, c := range report.Changes {
+		if c.Type == diff.ChangeInfo {
+			fmt.Printf("ℹ️  [%-10s] %s\n", c.Category, c.Message)
+		}
+	}
+
+	fmt.Printf("\nSummary: %d breaking change(s), %d non-breaking change(s).\n", report.BreakingCount, report.NonBreakingCount)
+
+	if report.BreakingCount > 0 && *failOnBreaking {
+		os.Exit(1)
+	}
+}
+
 func cmdExport(args []string) {
 	fs := flag.NewFlagSet("export", flag.ExitOnError)
-	outDir := fs.String("out", "./dist", "Output directory")
+	outPath := fs.String("out", "", "Output directory or file path")
+	format := fs.String("format", "static", "Export format: static, single-file, postman, bruno")
+	singleFile := fs.Bool("single-file", false, "Export zero-dependency standalone HTML file")
 
 	flagArgs, posArgs := separateArgs(args)
 	_ = fs.Parse(flagArgs)
 
 	if len(posArgs) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: spec path or URL is required. Example: apidock export ./openapi.yaml --out ./dist")
+		fmt.Fprintln(os.Stderr, "Error: spec path or URL is required. Example: apidock export ./openapi.yaml --single-file")
 		os.Exit(1)
 	}
 	specTarget := posArgs[0]
@@ -340,21 +434,81 @@ func cmdExport(args []string) {
 		log.Fatalf("Fatal: failed to parse OpenAPI spec: %v\n", err)
 	}
 
-	if err := os.MkdirAll(*outDir, 0755); err != nil {
-		log.Fatalf("Failed to create export directory: %v\n", err)
+	exportFormat := strings.ToLower(*format)
+	if *singleFile {
+		exportFormat = "single-file"
 	}
 
-	specJSON, err := json.MarshalIndent(parsedSpec, "", "  ")
-	if err != nil {
-		log.Fatalf("Failed to serialize spec: %v\n", err)
-	}
+	switch exportFormat {
+	case "single-file", "html":
+		distFS, err := server.GetDistFS()
+		if err != nil {
+			log.Fatalf("Fatal: failed to open embedded dist filesystem: %v\n", err)
+		}
+		htmlBytes, err := export.BuildSingleFileHTML(parsedSpec, distFS)
+		if err != nil {
+			log.Fatalf("Fatal: failed to build standalone HTML: %v\n", err)
+		}
 
-	specOutPath := filepath.Join(*outDir, "spec.json")
-	if err := os.WriteFile(specOutPath, specJSON, 0644); err != nil {
-		log.Fatalf("Failed to write spec.json: %v\n", err)
-	}
+		targetFile := *outPath
+		if targetFile == "" {
+			targetFile = "apidock-docs.html"
+		} else if strings.HasSuffix(targetFile, string(filepath.Separator)) || strings.HasSuffix(targetFile, "/") {
+			targetFile = filepath.Join(targetFile, "apidock-docs.html")
+		}
 
-	fmt.Printf("✅ Exported static documentation data to: %s\n", *outDir)
+		if err := os.WriteFile(targetFile, htmlBytes, 0644); err != nil {
+			log.Fatalf("Fatal: failed to write standalone HTML file %s: %v\n", targetFile, err)
+		}
+		fmt.Printf("✅ Exported zero-dependency standalone HTML documentation to: %s\n", targetFile)
+
+	case "postman":
+		postmanBytes, err := export.ToPostmanJSON(parsedSpec)
+		if err != nil {
+			log.Fatalf("Fatal: failed to generate Postman collection: %v\n", err)
+		}
+		targetFile := *outPath
+		if targetFile == "" {
+			targetFile = "postman_collection.json"
+		} else if strings.HasSuffix(targetFile, string(filepath.Separator)) || strings.HasSuffix(targetFile, "/") {
+			targetFile = filepath.Join(targetFile, "postman_collection.json")
+		}
+
+		if err := os.WriteFile(targetFile, postmanBytes, 0644); err != nil {
+			log.Fatalf("Fatal: failed to write Postman file %s: %v\n", targetFile, err)
+		}
+		fmt.Printf("✅ Exported Postman collection v2.1 to: %s\n", targetFile)
+
+	case "bruno":
+		targetDir := *outPath
+		if targetDir == "" {
+			targetDir = "./bruno"
+		}
+		if err := export.ExportBrunoToDir(parsedSpec, targetDir); err != nil {
+			log.Fatalf("Fatal: failed to export Bruno collection: %v\n", err)
+		}
+		fmt.Printf("✅ Exported Bruno collection workspace to: %s\n", targetDir)
+
+	default: // static
+		targetDir := *outPath
+		if targetDir == "" {
+			targetDir = "./dist"
+		}
+		if err := os.MkdirAll(targetDir, 0755); err != nil {
+			log.Fatalf("Failed to create export directory: %v\n", err)
+		}
+
+		specJSON, err := json.MarshalIndent(parsedSpec, "", "  ")
+		if err != nil {
+			log.Fatalf("Failed to serialize spec: %v\n", err)
+		}
+
+		specOutPath := filepath.Join(targetDir, "spec.json")
+		if err := os.WriteFile(specOutPath, specJSON, 0644); err != nil {
+			log.Fatalf("Failed to write spec.json: %v\n", err)
+		}
+		fmt.Printf("✅ Exported static documentation data to: %s\n", targetDir)
+	}
 }
 
 func openBrowser(url string) {

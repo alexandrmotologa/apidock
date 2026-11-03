@@ -81,3 +81,58 @@ func TestHistoryRecorder(t *testing.T) {
 		t.Errorf("expected empty history after Clear()")
 	}
 }
+
+func TestProxyExecuteStream(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, ok := w.(http.Flusher)
+		if ok {
+			flusher.Flush()
+		}
+		_, _ = w.Write([]byte("data: chunk 1\n\n"))
+		if ok {
+			flusher.Flush()
+		}
+		_, _ = w.Write([]byte("data: chunk 2\n\n"))
+		if ok {
+			flusher.Flush()
+		}
+	}))
+	defer ts.Close()
+
+	client := NewClient()
+	var receivedChunks []string
+	var receivedStatus int
+
+	err := client.ExecuteStream(context.Background(), Request{
+		URL:    ts.URL,
+		Method: http.MethodGet,
+	}, StreamCallback{
+		OnStart: func(status int, statusText string, headers map[string]string) error {
+			receivedStatus = status
+			return nil
+		},
+		OnChunk: func(chunk []byte) error {
+			receivedChunks = append(receivedChunks, string(chunk))
+			return nil
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected streaming error: %v", err)
+	}
+
+	if receivedStatus != http.StatusOK {
+		t.Errorf("expected status 200, got %d", receivedStatus)
+	}
+
+	combined := ""
+	for _, c := range receivedChunks {
+		combined += c
+	}
+
+	if combined != "data: chunk 1\n\ndata: chunk 2\n\n" {
+		t.Errorf("unexpected streamed payload: %q", combined)
+	}
+}

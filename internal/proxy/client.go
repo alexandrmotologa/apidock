@@ -21,6 +21,7 @@ type Request struct {
 	Headers   map[string]string `json:"headers,omitempty"`
 	Body      string            `json:"body,omitempty"`
 	TimeoutMs int               `json:"timeoutMs,omitempty"`
+	Stream    bool              `json:"stream,omitempty"`
 }
 
 // TimingMetrics records sub-millisecond network duration statistics.
@@ -220,6 +221,91 @@ func (c *Client) Execute(ctx context.Context, req Request) (*Response, error) {
 			SizeBytes:      int64(len(bodyBytes)),
 		},
 	}, nil
+}
+
+// StreamCallback provides hooks for streaming response processing.
+type StreamCallback struct {
+	OnStart func(statusCode int, statusText string, headers map[string]string) error
+	OnChunk func(chunk []byte) error
+}
+
+// ExecuteStream sends the request and streams the response body in chunks.
+func (c *Client) ExecuteStream(ctx context.Context, req Request, cb StreamCallback) error {
+	if strings.TrimSpace(req.URL) == "" {
+		return errors.New("request URL cannot be empty")
+	}
+
+	parsedURL, err := url.Parse(req.URL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		return fmt.Errorf("invalid URL scheme (must be http or https): %s", req.URL)
+	}
+
+	host := parsedURL.Hostname()
+	if isBlockedMetadataHost(host) {
+		return fmt.Errorf("access to internal cloud metadata service is prohibited: %s", host)
+	}
+
+	method := strings.ToUpper(strings.TrimSpace(req.Method))
+	if method == "" {
+		method = http.MethodGet
+	}
+
+	var bodyReader io.Reader
+	if req.Body != "" && method != http.MethodGet && method != http.MethodHead {
+		bodyReader = strings.NewReader(req.Body)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, method, req.URL, bodyReader)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	for k, v := range req.Headers {
+		if strings.EqualFold(k, "Host") {
+			httpReq.Host = v
+		} else {
+			httpReq.Header.Set(k, v)
+		}
+	}
+
+	if httpReq.Header.Get("User-Agent") == "" {
+		httpReq.Header.Set("User-Agent", "APIDock/1.0 (Developer Workstation; Streaming)")
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	respHeaders := make(map[string]string)
+	for k, values := range resp.Header {
+		respHeaders[k] = strings.Join(values, ", ")
+	}
+
+	if cb.OnStart != nil {
+		if err := cb.OnStart(resp.StatusCode, resp.Status, respHeaders); err != nil {
+			return err
+		}
+	}
+
+	buf := make([]byte, 4096)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 && cb.OnChunk != nil {
+			if err := cb.OnChunk(buf[:n]); err != nil {
+				return err
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return err
+		}
+	}
+
+	return nil
 }
 
 func durationToMs(d time.Duration) float64 {

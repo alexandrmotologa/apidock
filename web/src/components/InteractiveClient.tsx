@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import Editor from '@monaco-editor/react'
 import type { Endpoint, Environment, ProxyResponse } from '../types/spec'
 import { interpolate } from '../utils/interpolation'
+import { parseCurl } from '../utils/curlParser'
+import { validateContract, type ContractValidationResult } from '../utils/contractValidator'
 import {
   Play,
   Copy,
@@ -10,6 +12,14 @@ import {
   Globe,
   Clock,
   HardDrive,
+  FileCode,
+  Sliders,
+  CheckCircle2,
+  AlertTriangle,
+  X,
+  Radio,
+  Square,
+  Activity,
 } from 'lucide-react'
 
 interface InteractiveClientProps {
@@ -21,7 +31,7 @@ interface InteractiveClientProps {
 }
 
 type TabType = 'params' | 'headers' | 'auth' | 'body'
-type ResponseTabType = 'body' | 'headers' | 'snippets'
+type ResponseTabType = 'body' | 'headers' | 'snippets' | 'contract'
 
 export const InteractiveClient: React.FC<InteractiveClientProps> = ({
   endpoint,
@@ -47,14 +57,58 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
   const [basicUser, setBasicUser] = useState<string>('admin')
   const [basicPass, setBasicPass] = useState<string>('')
 
+  // Mock control states
+  const [mockStatusOverride, setMockStatusOverride] = useState<string>('')
+  const [mockExampleOverride, setMockExampleOverride] = useState<string>('')
+  const [mockLatency, setMockLatency] = useState<string>('')
+  const [showMockToolbar, setShowMockToolbar] = useState<boolean>(false)
+
+  // cURL Import modal state
+  const [isCurlModalOpen, setIsCurlModalOpen] = useState<boolean>(false)
+  const [curlCommandInput, setCurlCommandInput] = useState<string>('')
+
+  // Contract validation state
+  const [contractResult, setContractResult] = useState<ContractValidationResult | null>(null)
+
   // Snippets language selection
   const [snippetLang, setSnippetLang] = useState<'curl' | 'fetch' | 'axios' | 'pythonReq' | 'pythonHttpx' | 'go'>('curl')
 
   // Execution states
   const [isLoading, setIsLoading] = useState<boolean>(false)
+  const [isStreamMode, setIsStreamMode] = useState<boolean>(false)
+  const [isStreaming, setIsStreaming] = useState<boolean>(false)
+  const [streamChunksCount, setStreamChunksCount] = useState<number>(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
   const [response, setResponse] = useState<ProxyResponse | null>(null)
   const [copiedResponse, setCopiedResponse] = useState<boolean>(false)
   const [copiedSnippet, setCopiedSnippet] = useState<boolean>(false)
+
+  const handleStopStream = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    setIsStreaming(false)
+    setIsLoading(false)
+  }
+
+  // Available named examples in active endpoint
+  const availableExamples = useMemo(() => {
+    if (!endpoint?.responses) return []
+    const exList: string[] = []
+    for (const resp of Object.values(endpoint.responses)) {
+      if (resp.content) {
+        for (const mt of Object.values(resp.content)) {
+          if (mt.examples) {
+            for (const exKey of Object.keys(mt.examples)) {
+              if (!exList.includes(exKey)) exList.push(exKey)
+            }
+          }
+        }
+      }
+    }
+    return exList
+  }, [endpoint])
 
   // Update initial body when prop changes
   useEffect(() => {
@@ -122,6 +176,9 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
     }
 
     setResponse(null)
+    setContractResult(null)
+    setMockStatusOverride('')
+    setMockExampleOverride('')
   }, [endpoint])
 
   // Construct target URL with interpolated path & query parameters
@@ -131,14 +188,12 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
     baseUrl = interpolate(baseUrl, activeEnv.variables)
 
     let path = endpoint.path
-    // Interpolate path parameters e.g. /pets/{petId}
     for (const [k, v] of Object.entries(pathParamValues)) {
       const cleanVal = interpolate(v, activeEnv.variables)
       path = path.replace(new RegExp(`\\{${k}\\}`, 'g'), encodeURIComponent(cleanVal || `:${k}`))
     }
     path = interpolate(path, activeEnv.variables)
 
-    // Append query params
     const queryParts: string[] = []
     for (const q of queryParams) {
       if (q.enabled && q.key.trim() !== '') {
@@ -147,7 +202,6 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
       }
     }
 
-    // If apiKey in query
     if (authType === 'apiKey' && apiKeyHeader.toLowerCase() === 'query') {
       const keyVal = interpolate(apiKeyValue, activeEnv.variables)
       queryParts.push(`apiKey=${encodeURIComponent(keyVal)}`)
@@ -160,7 +214,7 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
     return `${cleanBase}${cleanPath}${queryString}`
   }, [endpoint, activeServer, activeEnv, pathParamValues, queryParams, authType, apiKeyHeader, apiKeyValue])
 
-  // Computed Headers for execution
+  // Computed Headers for execution (including Mock Server Directives)
   const computedHeaders = useMemo(() => {
     const res: Record<string, string> = {}
     for (const h of headers) {
@@ -181,8 +235,36 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
       res['Authorization'] = `Basic ${creds}`
     }
 
+    // Apply Mock Server Directives
+    const preferDirectives: string[] = []
+    if (mockStatusOverride) {
+      preferDirectives.push(`code=${mockStatusOverride}`)
+    }
+    if (mockExampleOverride) {
+      preferDirectives.push(`example=${mockExampleOverride}`)
+    }
+    if (preferDirectives.length > 0) {
+      res['Prefer'] = preferDirectives.join(', ')
+    }
+
+    if (mockLatency) {
+      res['X-Mock-Delay'] = mockLatency
+    }
+
     return res
-  }, [headers, authType, bearerToken, apiKeyHeader, apiKeyValue, basicUser, basicPass, activeEnv.variables])
+  }, [
+    headers,
+    authType,
+    bearerToken,
+    apiKeyHeader,
+    apiKeyValue,
+    basicUser,
+    basicPass,
+    activeEnv.variables,
+    mockStatusOverride,
+    mockExampleOverride,
+    mockLatency,
+  ])
 
   // Execute request
   const handleSend = async () => {
@@ -192,6 +274,109 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
     const startTime = performance.now()
 
     try {
+      if (isStreamMode) {
+        setIsStreaming(true)
+        setStreamChunksCount(0)
+        setResponse({
+          status: 200,
+          statusText: 'Connecting stream...',
+          headers: {},
+          body: '',
+          timing: {
+            dnsLookupMs: 0,
+            tcpConnectMs: 0,
+            tlsHandshakeMs: 0,
+            ttfbMs: 0,
+            totalMs: 0,
+            sizeBytes: 0,
+          },
+        })
+
+        const controller = new AbortController()
+        abortControllerRef.current = controller
+
+        const proxyPayload = {
+          url: computedUrl,
+          method: endpoint.method,
+          headers: computedHeaders,
+          body: ['GET', 'HEAD'].includes(endpoint.method) ? '' : requestBody,
+          stream: true,
+        }
+
+        const resp = await fetch('/api/proxy?stream=true', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(proxyPayload),
+          signal: controller.signal,
+        })
+
+        if (!resp.body) {
+          throw new Error('Response body stream is not available')
+        }
+
+        const reader = resp.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let accumulatedBody = ''
+        let streamHeaders: Record<string, string> = {}
+        let streamStatus = 200
+        let streamStatusText = 'OK'
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          let currentEvent = ''
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim()
+            } else if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6).trim()
+              try {
+                const dataJson = JSON.parse(dataStr)
+                if (currentEvent === 'meta') {
+                  streamStatus = dataJson.status || 200
+                  streamStatusText = dataJson.statusText || 'OK'
+                  streamHeaders = dataJson.headers || {}
+                } else if (currentEvent === 'chunk') {
+                  accumulatedBody += dataJson.chunk
+                  setStreamChunksCount((c) => c + 1)
+                  const elapsed = performance.now() - startTime
+                  setResponse({
+                    status: streamStatus,
+                    statusText: streamStatusText,
+                    headers: streamHeaders,
+                    body: accumulatedBody,
+                    timing: {
+                      dnsLookupMs: 0,
+                      tcpConnectMs: 0,
+                      tlsHandshakeMs: 0,
+                      ttfbMs: 0,
+                      totalMs: Math.round(elapsed * 10) / 10,
+                      sizeBytes: accumulatedBody.length,
+                    },
+                  })
+                } else if (currentEvent === 'error') {
+                  throw new Error(dataJson.error)
+                }
+              } catch {
+                // Ignore raw line parse error
+              }
+            }
+          }
+        }
+
+        setIsStreaming(false)
+        setIsLoading(false)
+        return
+      }
+
+      let finalResp: ProxyResponse
+
       if (isProxyMode) {
         // Route through Go CORS Proxy
         const proxyPayload = {
@@ -208,8 +393,7 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
           body: JSON.stringify(proxyPayload),
         })
 
-        const data: ProxyResponse = await resp.json()
-        setResponse(data)
+        finalResp = await resp.json()
       } else {
         // Direct browser fetch
         const resp = await fetch(computedUrl, {
@@ -226,7 +410,7 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
           respHeaders[k] = v
         })
 
-        setResponse({
+        finalResp = {
           status: resp.status,
           statusText: resp.statusText,
           headers: respHeaders,
@@ -239,7 +423,32 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
             totalMs: Math.round(totalTime * 10) / 10,
             sizeBytes: text.length,
           },
-        })
+        }
+      }
+
+      setResponse(finalResp)
+
+      // Run Response Contract Validation
+      if (finalResp.body) {
+        try {
+          const parsedJSON = JSON.parse(finalResp.body)
+          const statusCodeStr = String(finalResp.status)
+          const respDef =
+            endpoint.responses?.[statusCodeStr] ||
+            endpoint.responses?.['default']
+          const mediaDef = respDef?.content
+            ? Object.values(respDef.content)[0]
+            : undefined
+
+          if (mediaDef?.schema) {
+            const vResult = validateContract(parsedJSON, mediaDef.schema)
+            setContractResult(vResult)
+          } else {
+            setContractResult(null)
+          }
+        } catch {
+          setContractResult(null)
+        }
       }
     } catch (err) {
       const totalTime = performance.now() - startTime
@@ -258,6 +467,7 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
           sizeBytes: 0,
         },
       })
+      setContractResult(null)
     } finally {
       setIsLoading(false)
     }
@@ -275,7 +485,36 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleSend])
 
-  // Copy response
+  // Handle cURL Import
+  const handleImportCurl = () => {
+    if (!curlCommandInput.trim()) return
+    const parsed = parseCurl(curlCommandInput)
+
+    // Apply headers
+    if (Object.keys(parsed.headers).length > 0) {
+      const newHeaders = Object.entries(parsed.headers).map(([k, v]) => ({
+        key: k,
+        value: v,
+        enabled: true,
+      }))
+      setHeaders(newHeaders)
+    }
+
+    // Apply body
+    if (parsed.body) {
+      try {
+        const js = JSON.parse(parsed.body)
+        setRequestBody(JSON.stringify(js, null, 2))
+      } catch {
+        setRequestBody(parsed.body)
+      }
+      setActiveTab('body')
+    }
+
+    setIsCurlModalOpen(false)
+    setCurlCommandInput('')
+  }
+
   const copyResponse = () => {
     if (!response) return
     navigator.clipboard.writeText(response.body)
@@ -283,13 +522,12 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
     setTimeout(() => setCopiedResponse(false), 1500)
   }
 
-  // Prettify request body
   const prettifyBody = () => {
     try {
       const parsed = JSON.parse(requestBody)
       setRequestBody(JSON.stringify(parsed, null, 2))
     } catch {
-      // Ignored if invalid JSON
+      // Ignored
     }
   }
 
@@ -333,7 +571,7 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
 
   if (!endpoint) {
     return (
-      <div className="w-[480px] h-screen bg-[#09090b] border-l border-zinc-800/70 p-6 flex flex-col items-center justify-center text-center text-zinc-500">
+      <div className="w-[500px] h-screen bg-[#09090b] border-l border-zinc-800/70 p-6 flex flex-col items-center justify-center text-center text-zinc-500">
         <Zap className="w-10 h-10 mb-2 text-zinc-700" />
         <span className="text-xs">Interactive Playground</span>
       </div>
@@ -341,29 +579,168 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
   }
 
   return (
-    <div className="w-[500px] h-screen bg-[#09090b] border-l border-zinc-800/70 flex flex-col select-none">
+    <div className="w-[510px] h-screen bg-[#09090b] border-l border-zinc-800/70 flex flex-col select-none">
       {/* Client Header */}
       <div className="p-3.5 border-b border-zinc-800/70 space-y-2.5">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-200">
-            <Zap className="w-3.5 h-3.5 text-amber-400" />
-            <span>Playground</span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-200">
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span>Playground</span>
+            </div>
+
+            {/* Mock Control Toggle */}
+            <button
+              onClick={() => setShowMockToolbar(!showMockToolbar)}
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors border ${
+                showMockToolbar || mockStatusOverride || mockLatency
+                  ? 'bg-amber-950/40 text-amber-300 border-amber-800/50'
+                  : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200'
+              }`}
+              title="Toggle Mock Server Overrides"
+            >
+              <Sliders className="w-2.5 h-2.5" />
+              <span>Mock Controls</span>
+              {(mockStatusOverride || mockLatency) && (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse ml-0.5" />
+              )}
+            </button>
           </div>
 
-          {/* Proxy vs Direct Toggle */}
-          <button
-            onClick={() => setIsProxyMode(!isProxyMode)}
-            className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium transition-colors border ${
-              isProxyMode
-                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/50'
-                : 'bg-zinc-800/60 text-zinc-400 border-zinc-700/60'
-            }`}
-            title={isProxyMode ? 'CORS Proxy Active (Requests dispatched via local Go backend)' : 'Direct Mode (In-browser fetch)'}
-          >
-            <Globe className="w-3 h-3" />
-            <span>{isProxyMode ? 'CORS Proxy: ON' : 'Direct Mode'}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Import cURL Button */}
+            <button
+              onClick={() => setIsCurlModalOpen(true)}
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 transition-colors"
+              title="Import cURL command"
+            >
+              <FileCode className="w-3 h-3 text-indigo-400" />
+              <span>Import cURL</span>
+            </button>
+
+            {/* Proxy vs Direct Toggle */}
+            <button
+              onClick={() => setIsProxyMode(!isProxyMode)}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors border ${
+                isProxyMode
+                  ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/50'
+                  : 'bg-zinc-800/60 text-zinc-400 border-zinc-700/60'
+              }`}
+              title={
+                isProxyMode
+                  ? 'CORS Proxy Active (Requests dispatched via local Go backend)'
+                  : 'Direct Mode (In-browser fetch)'
+              }
+            >
+              <Globe className="w-3 h-3" />
+              <span>{isProxyMode ? 'Proxy: ON' : 'Direct'}</span>
+            </button>
+
+            {/* Stream Mode Toggle */}
+            <button
+              onClick={() => setIsStreamMode(!isStreamMode)}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors border ${
+                isStreamMode
+                  ? 'bg-purple-950/50 text-purple-300 border-purple-800/60'
+                  : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200'
+              }`}
+              title="Stream mode: Receive Server-Sent Events (SSE) or NDJSON chunks in real time"
+            >
+              <Activity className="w-3 h-3 text-purple-400" />
+              <span>{isStreamMode ? 'Stream: ON' : 'Stream'}</span>
+            </button>
+          </div>
         </div>
+
+        {/* Mock Controls Toolbar (Expandable) */}
+        {showMockToolbar && (
+          <div className="p-2.5 bg-zinc-950 rounded border border-zinc-800/80 space-y-2 text-xs animate-in fade-in duration-100">
+            <div className="flex items-center justify-between text-[11px] text-zinc-400">
+              <span className="font-semibold text-zinc-300 flex items-center gap-1">
+                <Radio className="w-3 h-3 text-emerald-400" />
+                Mock Response Directives
+              </span>
+              {(mockStatusOverride || mockLatency || mockExampleOverride) && (
+                <button
+                  onClick={() => {
+                    setMockStatusOverride('')
+                    setMockLatency('')
+                    setMockExampleOverride('')
+                  }}
+                  className="text-zinc-500 hover:text-zinc-300 text-[10px]"
+                >
+                  Reset Overrides
+                </button>
+              )}
+            </div>
+
+            {/* Status Code Chips */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] text-zinc-500 font-mono">Status:</span>
+              {['200', '201', '400', '401', '404', '500'].map((code) => {
+                const isActive = mockStatusOverride === code
+                return (
+                  <button
+                    key={code}
+                    onClick={() => setMockStatusOverride(isActive ? '' : code)}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono border transition-colors ${
+                      isActive
+                        ? 'bg-amber-950/60 text-amber-300 border-amber-700 font-bold'
+                        : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200'
+                    }`}
+                  >
+                    {code}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Latency Presets */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] text-zinc-500 font-mono">Delay:</span>
+              {[
+                { label: '0ms', val: '' },
+                { label: '150ms', val: '150ms' },
+                { label: '500ms', val: '500ms' },
+                { label: '1s', val: '1000ms' },
+              ].map((lat) => {
+                const isActive = mockLatency === lat.val
+                return (
+                  <button
+                    key={lat.label}
+                    onClick={() => setMockLatency(lat.val)}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono border transition-colors ${
+                      isActive
+                        ? 'bg-indigo-950/60 text-indigo-300 border-indigo-700 font-bold'
+                        : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200'
+                    }`}
+                  >
+                    {lat.label}
+                  </button>
+                )
+              })}
+
+              {/* Named Example Dropdown */}
+              {availableExamples.length > 0 && (
+                <div className="flex items-center gap-1 ml-auto">
+                  <span className="text-[10px] text-zinc-500 font-mono">Example:</span>
+                  <select
+                    value={mockExampleOverride}
+                    onChange={(e) => setMockExampleOverride(e.target.value)}
+                    className="bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-[10px] font-mono text-zinc-200 focus:outline-none"
+                  >
+                    <option value="">(default)</option>
+                    {availableExamples.map((ex) => (
+                      <option key={ex} value={ex}>
+                        {ex}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Target URL Bar & Send Button */}
         <div className="flex items-center gap-1.5">
@@ -374,18 +751,29 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
             </span>
           </div>
 
-          <button
-            onClick={handleSend}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded font-medium text-xs shadow-sm shadow-emerald-900/30 transition-all cursor-pointer disabled:opacity-50 shrink-0"
-          >
-            {isLoading ? (
-              <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-            ) : (
-              <Play className="w-3.5 h-3.5 fill-current" />
-            )}
-            <span>Send</span>
-          </button>
+          {isStreaming ? (
+            <button
+              onClick={handleStopStream}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded font-medium text-xs shadow-sm shadow-rose-900/30 transition-all cursor-pointer shrink-0"
+              title="Cancel live stream"
+            >
+              <Square className="w-3.5 h-3.5 fill-current" />
+              <span>Stop</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded font-medium text-xs shadow-sm shadow-emerald-900/30 transition-all cursor-pointer disabled:opacity-50 shrink-0"
+            >
+              {isLoading ? (
+                <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+              ) : (
+                <Play className="w-3.5 h-3.5 fill-current" />
+              )}
+              <span>Send</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -436,11 +824,10 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
       </div>
 
       {/* Tab Panels Content */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-[220px]">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px]">
         {/* PARAMS TAB */}
         {activeTab === 'params' && (
           <div className="space-y-4 text-xs">
-            {/* Path Params */}
             {Object.keys(pathParamValues).length > 0 && (
               <div className="space-y-2">
                 <div className="font-semibold text-zinc-400 uppercase tracking-wider text-[10px]">
@@ -731,8 +1118,44 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
               <span className="text-zinc-500 text-[11px]">Ready to execute</span>
             )}
 
+            {/* Contract Conformity Pill */}
+            {contractResult && (
+              <button
+                onClick={() => setActiveResponseTab('contract')}
+                className={`flex items-center gap-1 font-mono text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                  contractResult.isValid
+                    ? 'bg-emerald-950/50 text-emerald-400 border-emerald-800/50'
+                    : 'bg-amber-950/50 text-amber-400 border-amber-800/50'
+                }`}
+                title="Open Response Contract Audit"
+              >
+                {contractResult.isValid ? (
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                ) : (
+                  <AlertTriangle className="w-3 h-3 text-amber-400" />
+                )}
+                <span>Contract {contractResult.conformityScore}%</span>
+              </button>
+            )}
+
+            {/* Live Streaming Badge */}
+            {(isStreaming || streamChunksCount > 0) && (
+              <span
+                className={`flex items-center gap-1 font-mono text-[10px] px-1.5 py-0.5 rounded border ${
+                  isStreaming
+                    ? 'bg-purple-950/60 text-purple-300 border-purple-800/60 animate-pulse'
+                    : 'bg-zinc-800/60 text-zinc-400 border-zinc-700/60'
+                }`}
+              >
+                <Activity className="w-2.5 h-2.5 text-purple-400" />
+                <span>
+                  {isStreaming ? 'Streaming' : 'Stream Done'} ({streamChunksCount} chunks)
+                </span>
+              </span>
+            )}
+
             {response?.timing && (
-              <div className="flex items-center gap-3 text-[11px] text-zinc-400 font-mono ml-2">
+              <div className="flex items-center gap-3 text-[11px] text-zinc-400 font-mono ml-1">
                 <span className="flex items-center gap-1" title="Total Execution Duration">
                   <Clock className="w-3 h-3 text-zinc-500" />
                   {response.timing.totalMs} ms
@@ -777,6 +1200,18 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
             >
               Snippets
             </button>
+            {contractResult && (
+              <button
+                onClick={() => setActiveResponseTab('contract')}
+                className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+                  activeResponseTab === 'contract'
+                    ? 'bg-zinc-800 text-zinc-100 font-medium'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                Contract ({contractResult.issues.length})
+              </button>
+            )}
 
             {response?.body && activeResponseTab === 'body' && (
               <button
@@ -876,7 +1311,15 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
               <div className="flex-1 overflow-hidden bg-zinc-950">
                 <Editor
                   height="100%"
-                  defaultLanguage={snippetLang === 'go' ? 'go' : snippetLang.startsWith('python') ? 'python' : snippetLang === 'curl' ? 'shell' : 'typescript'}
+                  defaultLanguage={
+                    snippetLang === 'go'
+                      ? 'go'
+                      : snippetLang.startsWith('python')
+                      ? 'python'
+                      : snippetLang === 'curl'
+                      ? 'shell'
+                      : 'typescript'
+                  }
                   theme="vs-dark"
                   value={activeSnippetCode}
                   options={{
@@ -892,8 +1335,97 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
               </div>
             </div>
           )}
+
+          {/* Response Contract Audit Panel */}
+          {activeResponseTab === 'contract' && contractResult && (
+            <div className="h-full overflow-y-auto p-4 space-y-3">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+                <div className="flex items-center gap-2">
+                  {contractResult.isValid ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-amber-400" />
+                  )}
+                  <span className="text-xs font-semibold text-zinc-200">
+                    Schema Conformity: {contractResult.conformityScore}%
+                  </span>
+                </div>
+                <span className="text-[10px] text-zinc-500 font-mono">
+                  {contractResult.issues.length} issue(s) detected
+                </span>
+              </div>
+
+              {contractResult.issues.length === 0 ? (
+                <div className="text-center py-6 text-zinc-400 text-xs">
+                  ✅ Response payload conforms 100% to the OpenAPI response schema.
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {contractResult.issues.map((issue, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-2 rounded text-xs border ${
+                        issue.severity === 'ERROR'
+                          ? 'bg-rose-950/30 text-rose-300 border-rose-900/40'
+                          : 'bg-amber-950/30 text-amber-300 border-amber-900/40'
+                      }`}
+                    >
+                      <div className="font-mono text-[10px] opacity-75">{issue.path}</div>
+                      <div>{issue.message}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* cURL Import Modal */}
+      {isCurlModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-[#121215] border border-zinc-800 rounded-xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+              <div className="flex items-center gap-2">
+                <FileCode className="w-4 h-4 text-indigo-400" />
+                <span className="font-semibold text-xs text-zinc-200">Import cURL Command</span>
+              </div>
+              <button onClick={() => setIsCurlModalOpen(false)} className="text-zinc-500 hover:text-zinc-300">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-2">
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                Paste any standard cURL command. APIDock will automatically parse the headers, URL parameters, and JSON payload into the playground.
+              </p>
+              <textarea
+                value={curlCommandInput}
+                onChange={(e) => setCurlCommandInput(e.target.value)}
+                placeholder={'curl -X POST "https://api.example.com/v1/orders" \\\n  -H "Authorization: Bearer token" \\\n  -d \'{"quantity": 5}\''}
+                rows={6}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded p-2.5 text-xs font-mono text-zinc-200 focus:outline-none focus:border-indigo-500 resize-none"
+              />
+            </div>
+
+            <div className="px-4 py-3 border-t border-zinc-800 bg-zinc-950 flex justify-end gap-2">
+              <button
+                onClick={() => setIsCurlModalOpen(false)}
+                className="px-3 py-1 text-xs text-zinc-400 hover:text-zinc-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleImportCurl}
+                disabled={!curlCommandInput.trim()}
+                className="px-3 py-1 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded transition-colors disabled:opacity-50"
+              >
+                Import to Playground
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
