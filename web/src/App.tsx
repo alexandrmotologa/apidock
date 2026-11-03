@@ -10,7 +10,7 @@ import { HistoryModal } from './components/HistoryModal'
 import { ValidationModal } from './components/ValidationModal'
 import { DiffModal } from './components/DiffModal'
 import type { Endpoint } from './types/spec'
-import { AlertCircle, RefreshCw } from 'lucide-react'
+import { AlertCircle, RefreshCw, Menu, X, BookOpen, Zap } from 'lucide-react'
 
 export function App() {
   const { spec, loading, error, reloadSpec } = useSpec()
@@ -36,6 +36,10 @@ export function App() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isValidationOpen, setIsValidationOpen] = useState(false)
   const [isDiffOpen, setIsDiffOpen] = useState(false)
+
+  // Responsive / Mobile navigation state
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [mobileView, setMobileView] = useState<'docs' | 'client'>('docs')
 
   // Initialize selected endpoint and server when spec loads
   useEffect(() => {
@@ -109,36 +113,146 @@ export function App() {
   if (!spec) return null
 
   return (
-    <div className="h-screen w-screen flex overflow-hidden bg-[#09090b] text-zinc-100 font-sans">
-      {/* 1. Left Column: Sidebar Navigation */}
-      <Sidebar
-        spec={spec}
-        selectedEndpoint={selectedEndpoint}
-        onSelectEndpoint={(ep) => setSelectedEndpoint(ep)}
-        onOpenSearch={() => setIsSearchOpen(true)}
-        onOpenEnv={() => setIsEnvOpen(true)}
-        onOpenHistory={() => setIsHistoryOpen(true)}
-        onOpenValidation={() => setIsValidationOpen(true)}
-        onOpenDiff={() => setIsDiffOpen(true)}
-        activeEnv={activeEnv}
-      />
+    <div className="h-screen w-screen flex flex-col lg:flex-row overflow-hidden bg-[#09090b] text-zinc-100 font-sans">
+      {/* Mobile Top Header (Visible on < lg) */}
+      <header className="lg:hidden flex items-center justify-between px-3.5 py-2.5 bg-[#09090b] border-b border-zinc-800/80 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white"
+            aria-label="Toggle navigation menu"
+          >
+            {isMobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+          </button>
 
-      {/* 2. Center Column: API Documentation Viewer */}
-      <ApiDocViewer
-        endpoint={selectedEndpoint}
-        spec={spec}
-        selectedServer={selectedServer}
-        onSelectServer={setSelectedServer}
-        onFillClientBody={(json) => setInjectedBody(json)}
-      />
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-mono font-bold text-[10px] text-white">
+              AD
+            </div>
+            <span className="font-semibold text-xs tracking-tight text-zinc-100 truncate max-w-[140px] sm:max-w-[200px]">
+              {spec.info.title}
+            </span>
+          </div>
+        </div>
 
-      {/* 3. Right Column: Interactive API Client */}
-      <InteractiveClient
-        endpoint={selectedEndpoint}
-        activeEnv={activeEnv}
-        activeServer={selectedServer}
-        initialBody={injectedBody}
-      />
+        {/* Mobile View Switcher Tabs */}
+        <div className="flex items-center bg-zinc-900/90 p-0.5 rounded-lg border border-zinc-800 text-xs">
+          <button
+            onClick={() => setMobileView('docs')}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+              mobileView === 'docs'
+                ? 'bg-zinc-800 text-zinc-100 shadow-xs'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <BookOpen className="w-3 h-3" />
+            <span>Docs</span>
+          </button>
+          <button
+            onClick={() => setMobileView('client')}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+              mobileView === 'client'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Zap className="w-3 h-3 text-amber-300" />
+            <span>Playground</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Mobile Drawer Navigation Overlay */}
+      {isMobileMenuOpen && (
+        <div className="lg:hidden fixed inset-0 z-40 flex">
+          <div
+            className="fixed inset-0 bg-black/75 backdrop-blur-xs transition-opacity"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+          <div className="relative z-50 w-72 max-w-[85vw] h-full shadow-2xl bg-[#09090b]">
+            <Sidebar
+              spec={spec}
+              selectedEndpoint={selectedEndpoint}
+              onSelectEndpoint={(ep) => {
+                setSelectedEndpoint(ep)
+                setIsMobileMenuOpen(false)
+              }}
+              onOpenSearch={() => {
+                setIsSearchOpen(true)
+                setIsMobileMenuOpen(false)
+              }}
+              onOpenEnv={() => {
+                setIsEnvOpen(true)
+                setIsMobileMenuOpen(false)
+              }}
+              onOpenHistory={() => {
+                setIsHistoryOpen(true)
+                setIsMobileMenuOpen(false)
+              }}
+              onOpenValidation={() => {
+                setIsValidationOpen(true)
+                setIsMobileMenuOpen(false)
+              }}
+              onOpenDiff={() => {
+                setIsDiffOpen(true)
+                setIsMobileMenuOpen(false)
+              }}
+              activeEnv={activeEnv}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Sidebar (Permanent on lg+) */}
+      <div className="hidden lg:flex shrink-0">
+        <Sidebar
+          spec={spec}
+          selectedEndpoint={selectedEndpoint}
+          onSelectEndpoint={(ep) => setSelectedEndpoint(ep)}
+          onOpenSearch={() => setIsSearchOpen(true)}
+          onOpenEnv={() => setIsEnvOpen(true)}
+          onOpenHistory={() => setIsHistoryOpen(true)}
+          onOpenValidation={() => setIsValidationOpen(true)}
+          onOpenDiff={() => setIsDiffOpen(true)}
+          activeEnv={activeEnv}
+        />
+      </div>
+
+      {/* Workspace Area: Docs Viewer & Interactive Client */}
+      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden min-w-0">
+        {/* Center Column: API Documentation Viewer */}
+        <div
+          className={`flex-1 min-w-0 overflow-y-auto ${
+            mobileView === 'docs' ? 'flex' : 'hidden lg:flex'
+          }`}
+        >
+          <ApiDocViewer
+            endpoint={selectedEndpoint}
+            spec={spec}
+            selectedServer={selectedServer}
+            onSelectServer={setSelectedServer}
+            onFillClientBody={(json) => {
+              setInjectedBody(json)
+              setMobileView('client')
+            }}
+            onOpenPlayground={() => setMobileView('client')}
+          />
+        </div>
+
+        {/* Right Column: Interactive API Client */}
+        <div
+          className={`${
+            mobileView === 'client' ? 'flex flex-1' : 'hidden lg:flex'
+          } shrink-0`}
+        >
+          <InteractiveClient
+            endpoint={selectedEndpoint}
+            activeEnv={activeEnv}
+            activeServer={selectedServer}
+            initialBody={injectedBody}
+          />
+        </div>
+      </main>
 
       {/* Modals */}
       <SearchModal

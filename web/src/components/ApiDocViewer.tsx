@@ -10,6 +10,7 @@ import {
   FileJson,
   Layers,
   Sparkles,
+  Zap,
 } from 'lucide-react'
 
 interface ApiDocViewerProps {
@@ -18,6 +19,7 @@ interface ApiDocViewerProps {
   selectedServer: string
   onSelectServer: (url: string) => void
   onFillClientBody?: (exampleJSON: string) => void
+  onOpenPlayground?: () => void
 }
 
 const METHOD_STYLES: Record<string, { bg: string; text: string; border: string }> = {
@@ -36,6 +38,7 @@ export const ApiDocViewer: React.FC<ApiDocViewerProps> = ({
   selectedServer,
   onSelectServer,
   onFillClientBody,
+  onOpenPlayground,
 }) => {
   const [copied, setCopied] = useState(false)
   const [activeResponseCode, setActiveResponseCode] = useState<string>('200')
@@ -92,27 +95,39 @@ export const ApiDocViewer: React.FC<ApiDocViewerProps> = ({
     requestBodyMedia?.schema?.example
 
   return (
-    <div className="flex-1 overflow-y-auto px-8 py-6 space-y-8 max-w-4xl">
+    <div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-6 sm:space-y-8 max-w-4xl w-full">
       {/* Endpoint Header */}
       <div>
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <span
-            className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${methodStyle.bg} ${methodStyle.text} ${methodStyle.border}`}
-          >
-            {endpoint.method}
-          </span>
-          <span className="font-mono text-base font-semibold text-zinc-100">{endpoint.path}</span>
-          <button
-            onClick={copyPath}
-            className="text-zinc-500 hover:text-zinc-300 p-1 rounded hover:bg-zinc-800/60 transition-colors"
-            title="Copy path"
-          >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-          </button>
-          {endpoint.deprecated && (
-            <span className="text-[10px] font-semibold text-amber-400 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-800/40">
-              DEPRECATED
+        <div className="flex items-center justify-between gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span
+              className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${methodStyle.bg} ${methodStyle.text} ${methodStyle.border}`}
+            >
+              {endpoint.method}
             </span>
+            <span className="font-mono text-sm sm:text-base font-semibold text-zinc-100 break-all">{endpoint.path}</span>
+            <button
+              onClick={copyPath}
+              className="text-zinc-500 hover:text-zinc-300 p-1 rounded hover:bg-zinc-800/60 transition-colors"
+              title="Copy path"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            </button>
+            {endpoint.deprecated && (
+              <span className="text-[10px] font-semibold text-amber-400 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-800/40">
+                DEPRECATED
+              </span>
+            )}
+          </div>
+
+          {onOpenPlayground && (
+            <button
+              onClick={onOpenPlayground}
+              className="lg:hidden flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/30 transition-colors cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Try in Playground</span>
+            </button>
           )}
         </div>
 

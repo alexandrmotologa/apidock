@@ -571,7 +571,7 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
 
   if (!endpoint) {
     return (
-      <div className="w-[500px] h-screen bg-[#09090b] border-l border-zinc-800/70 p-6 flex flex-col items-center justify-center text-center text-zinc-500">
+      <div className="w-full lg:w-[460px] xl:w-[500px] h-full lg:h-screen bg-[#09090b] border-t lg:border-t-0 lg:border-l border-zinc-800/70 p-6 flex flex-col items-center justify-center text-center text-zinc-500">
         <Zap className="w-10 h-10 mb-2 text-zinc-700" />
         <span className="text-xs">Interactive Playground</span>
       </div>
@@ -579,7 +579,7 @@ export const InteractiveClient: React.FC<InteractiveClientProps> = ({
   }
 
   return (
-    <div className="w-[510px] h-screen bg-[#09090b] border-l border-zinc-800/70 flex flex-col select-none">
+    <div className="w-full lg:w-[460px] xl:w-[500px] h-full lg:h-screen bg-[#09090b] border-t lg:border-t-0 lg:border-l border-zinc-800/70 flex flex-col select-none">
       {/* Client Header */}
       <div className="p-3.5 border-b border-zinc-800/70 space-y-2.5">
         <div className="flex items-center justify-between">

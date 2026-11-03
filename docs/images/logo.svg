@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <clipPath id="squircle-clip">
+      <rect x="24" y="24" width="976" height="976" rx="220" />
+    </clipPath>
+
+    <linearGradient id="cyan-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f5ff"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+
+    <linearGradient id="amber-beak" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+
+    <linearGradient id="indigo-core" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#4338ca"/>
+    </linearGradient>
+
+    <filter id="subtle-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.14" />
+    </filter>
+  </defs>
+
+  <!-- Luxury White Squircle Container -->
+  <rect x="24" y="24" width="976" height="976" rx="220" fill="#ffffff" stroke="#e2e8f0" stroke-width="6" />
+
+  <g clip-path="url(#squircle-clip)">
+    <!-- Decorative subtle harbor wave background -->
+    <circle cx="512" cy="512" r="460" fill="none" stroke="#f1f5f9" stroke-width="2" />
+    <circle cx="512" cy="512" r="380" fill="none" stroke="#f8fafc" stroke-width="2" />
+
+    <g transform="translate(512, 512)" filter="url(#subtle-shadow)">
+
+      <!-- Hexagonal Architectural Gateway Frame -->
+      <polygon points="
+        0,-390
+        338,-195
+        338,195
+        0,390
+        -338,195
+        -338,-195
+      " fill="none" stroke="#0f172a" stroke-width="36" stroke-linejoin="round" />
+
+      <!-- Inner Precision Telemetry Ring (Dashed Electric Cyan) -->
+      <polygon points="
+        0,-352
+        305,-176
+        305,176
+        0,352
+        -305,176
+        -305,-176
+      " fill="none" stroke="#00f5ff" stroke-width="4" opacity="0.5" stroke-dasharray="14, 10" />
+
+      <!-- Corner Alignment Crosshairs -->
+      <circle cx="0" cy="-390" r="7" fill="#00f5ff" />
+      <circle cx="338" cy="-195" r="7" fill="#00f5ff" />
+      <circle cx="338" cy="195" r="7" fill="#00f5ff" />
+      <circle cx="0" cy="390" r="7" fill="#00f5ff" />
+      <circle cx="-338" cy="195" r="7" fill="#00f5ff" />
+      <circle cx="-338" cy="-195" r="7" fill="#00f5ff" />
+
+      <!-- 100% Watertight Solid Obsidian Base Silhouette -->
+      <path d="
+        M 0 -315
+        L 55 -285 L 115 -255 L 175 -195 L 255 -115 L 275 -35 L 265 65 L 225 175 L 165 275 L 85 335 L 0 365
+        L -85 335 L -165 275 L -225 175 L -265 65 L -275 -35 L -255 -115 L -175 -195 L -115 -255 L -55 -285
+        Z
+      " fill="#090d16" />
+
+      <!-- Outer Wing Facets (Left: Light/Reflective, Right: Shadow) -->
+      <!-- Left Outer Wing -->
+      <polygon points="-175,-195 -255,-115 -275,-35 -195,-45 -145,-125" fill="#334155" />
+      <polygon points="-275,-35 -265,65 -205,45 -195,-45" fill="#1e293b" />
+      <polygon points="-265,65 -225,175 -165,135 -205,45" fill="#0f172a" />
+      <polygon points="-225,175 -165,275 -125,205 -165,135" fill="#1e293b" />
+      <polygon points="-165,275 -85,335 -65,245 -125,205" fill="#0f172a" />
+
+      <!-- Right Outer Wing -->
+      <polygon points="175,-195 255,-115 275,-35 195,-45 145,-125" fill="#1e293b" />
+      <polygon points="275,-35 265,65 205,45 195,-45" fill="#0f172a" />
+      <polygon points="265,65 225,175 165,135 205,45" fill="#0b0f19" />
+      <polygon points="225,175 165,275 125,205 165,135" fill="#0f172a" />
+      <polygon points="165,275 85,335 65,245 125,205" fill="#0b0f19" />
+
+      <!-- Inner Wing & Scapular Facets -->
+      <polygon points="-145,-125 -195,-45 -135,15 -85,-55" fill="#475569" />
+      <polygon points="145,-125 195,-45 135,15 85,-55" fill="#1e293b" />
+      <polygon points="-195,-45 -205,45 -145,85 -135,15" fill="#334155" />
+      <polygon points="195,-45 205,45 145,85 135,15" fill="#0f172a" />
+      <polygon points="-145,85 -165,135 -105,155 -95,85" fill="#1e293b" />
+      <polygon points="145,85 165,135 105,155 95,85" fill="#0b0f19" />
+
+      <!-- Central Tail Feathers -->
+      <polygon points="0,365 -85,335 -45,265 0,285" fill="#1e293b" />
+      <polygon points="0,365 85,335 45,265 0,285" fill="#0f172a" />
+      <polygon points="0,285 -45,265 0,195 45,265" fill="#334155" />
+
+      <!-- Osprey Mantle & Breastplate -->
+      <polygon points="0,-155 -85,-55 -65,65 0,125" fill="#334155" />
+      <polygon points="0,-155 85,-55 65,65 0,125" fill="#1e293b" />
+      <polygon points="0,125 -65,65 -45,195 0,195" fill="#1e293b" />
+      <polygon points="0,125 65,65 45,195 0,195" fill="#0f172a" />
+
+      <!-- Head Crest & Brow (Sharp Geometric Predator Silhouette) -->
+      <polygon points="0,-315 -55,-285 -40,-235 0,-255" fill="#475569" />
+      <polygon points="0,-315 55,-285 40,-235 0,-255" fill="#1e293b" />
+      <polygon points="0,-255 -40,-235 -95,-205 -50,-165 0,-185" fill="#64748b" />
+      <polygon points="0,-255 40,-235 95,-205 50,-165 0,-185" fill="#334155" />
+      <polygon points="-55,-285 -115,-255 -95,-205 -40,-235" fill="#334155" />
+      <polygon points="55,-285 115,-255 95,-205 40,-235" fill="#0f172a" />
+
+      <!-- Crown Crest Feathers -->
+      <polygon points="0,-315 -25,-340 0,-328 25,-340" fill="#00f5ff" opacity="0.8" />
+
+      <!-- Cheeks & Facial Plates -->
+      <polygon points="0,-185 -50,-165 -65,-105 0,-135" fill="#cbd5e1" />
+      <polygon points="0,-185 50,-165 65,-105 0,-135" fill="#94a3b8" />
+      <polygon points="-50,-165 -95,-205 -115,-155 -65,-105" fill="#1e293b" />
+      <polygon points="50,-165 95,-205 115,-155 65,-105" fill="#0f172a" />
+
+      <!-- Predator Eyes (Canted Almond Sockets with Electric Cyan Glow) -->
+      <!-- Left Eye -->
+      <polygon points="-42,-202 -72,-214 -84,-198 -54,-188" fill="#090d16" stroke="#00f5ff" stroke-width="2" />
+      <polygon points="-50,-200 -70,-208 -62,-194" fill="url(#cyan-glow)" />
+      <circle cx="-60" cy="-201" r="3" fill="#ffffff" />
+
+      <!-- Right Eye -->
+      <polygon points="42,-202 72,-214 84,-198 54,-188" fill="#090d16" stroke="#00f5ff" stroke-width="2" />
+      <polygon points="50,-200 70,-208 62,-194" fill="url(#cyan-glow)" />
+      <circle cx="60" cy="-201" r="3" fill="#ffffff" />
+
+      <!-- Hooked Geometric Beak (Amber Gradient) -->
+      <polygon points="0,-175 -24,-135 0,-138" fill="url(#amber-beak)" />
+      <polygon points="0,-175 24,-135 0,-138" fill="#d97706" />
+      <polygon points="0,-138 -24,-135 0,-75" fill="url(#amber-beak)" />
+      <polygon points="0,-138 24,-135 0,-75" fill="#b45309" />
+      <polygon points="0,-75 -10,-105 0,-115" fill="#78350f" />
+      <polygon points="0,-75 10,-105 0,-115" fill="#451a03" />
+
+      <!-- Central "Dock Keystone" Emblem on Chest (APIDock Anchor Core) -->
+      <polygon points="0,-25 -28,25 0,65 28,25" fill="#0f172a" stroke="#00f5ff" stroke-width="3" />
+      <polygon points="0,-10 -15,22 0,45 15,22" fill="url(#cyan-glow)" />
+
+    </g>
+  </g>
+</svg>

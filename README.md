@@ -1,8 +1,52 @@
-# APIDock
+<p align="center">
+  <img src="docs/images/logo.png?raw=true" alt="APIDock Logo" width="130" style="border-radius: 24px;" />
+</p>
 
-Single-binary OpenAPI 3.0 and 3.1 documentation server, interactive HTTP client, and schema-driven mock server.
+<h1 align="center">APIDock</h1>
 
-APIDock reads OpenAPI specifications (YAML or JSON) and serves an interactive web studio. It bundles an offline-first documentation viewer, an in-browser request runner with CORS proxy bypass, an automated mock engine on port 4010, and an encrypted client-side environment manager into one standalone binary.
+<p align="center">
+  <strong>Single-binary OpenAPI 3.0 and 3.1 documentation engine, interactive HTTP client, and schema-driven mock server.</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat-square&logo=go" alt="Go" />
+  <img src="https://img.shields.io/badge/OpenAPI-3.1%20%2F%203.0-6BA539?style=flat-square&logo=openapiinitiative" alt="OpenAPI" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react" alt="React 19" />
+  <img src="https://img.shields.io/badge/Tailwind-CSS%20v4-38B2AC?style=flat-square&logo=tailwind-css" alt="Tailwind CSS" />
+  <img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License" />
+</p>
+
+<p align="center">
+  <img src="docs/images/apidock_demo.gif?raw=true" alt="APIDock Interactive Demo" width="100%" />
+</p>
+
+APIDock reads OpenAPI specifications (YAML or JSON) and serves an interactive web studio. It bundles an offline-first documentation viewer, an in-browser request runner with CORS proxy bypass, an automated mock engine on port 4010, an encrypted client-side environment manager, and a breaking changes diff detector into one standalone binary.
+
+## Interface & Workflows
+
+### Desktop Studio Overview
+Full three-column documentation with tag grouping, schema tree, and operation definitions:
+<p align="center">
+  <img src="docs/images/apidock_desktop.png?raw=true" alt="APIDock Desktop Studio" width="100%" />
+</p>
+
+### Interactive Playground & Telemetry
+In-browser HTTP client with sub-millisecond network tracing, mock directives, and response contract validation:
+<p align="center">
+  <img src="docs/images/apidock_playground.png?raw=true" alt="Interactive Playground & Telemetry" width="100%" />
+</p>
+
+### Breaking Changes & Spec Diff Engine
+Analyze differences between specification revisions in the web studio or terminal before deployment:
+<p align="center">
+  <img src="docs/images/apidock_diff.png?raw=true" alt="Breaking Changes Diff Engine" width="100%" />
+</p>
+
+### Responsive Mobile Interface
+Optimized layouts with drawer navigation and tabbed views for mobile and tablet devices:
+<p align="center">
+  <img src="docs/images/apidock_mobile.png?raw=true" alt="Responsive Mobile Interface" width="400" />
+</p>
 
 ## Features
 
